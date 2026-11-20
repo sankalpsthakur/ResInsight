@@ -3304,6 +3304,57 @@ class TestTimelineQueries:
         ]
         assert timeline.event_dates(wells=[well_a], event_types=["WCONHIST"]) == []
 
+    @pytest.fixture
+    def schedule_timeline(self, rips_instance, initialize_test):
+        """Timeline with schedule-level events only, so no case is needed."""
+        project = rips_instance.project
+        timeline = project.descendants(rips.WellPathCollection)[0].event_timeline()
+        timeline.add_insert_date_event(event_date="2024-01-01")
+        timeline.add_keyword_event(
+            event_date="2025-01-01",
+            keyword_name="RPTRST",
+            keyword_data={"BASIC": 2},
+        )
+        return timeline
+
+    def test_delete_events(self, schedule_timeline):
+        from datetime import datetime
+
+        timeline = schedule_timeline
+        first = timeline.add_insert_date_event(event_date="2031-01-01")
+        second = timeline.add_insert_date_event(event_date="2032-01-01")
+        assert timeline.latest_event_date() == datetime(2032, 1, 1)
+
+        # A repeated event is deleted once
+        timeline.delete_events(events=[first, second, first])
+        assert timeline.latest_event_date() == datetime(2025, 1, 1)
+        assert len(timeline.event_dates()) == 2
+
+        # Deleting nothing is a no-op
+        timeline.delete_events(events=[])
+        assert len(timeline.event_dates()) == 2
+
+    def test_delete_events_rejects_deleted_event(self, schedule_timeline):
+        from datetime import datetime
+
+        timeline = schedule_timeline
+        event = timeline.add_insert_date_event(event_date="2031-01-01")
+        timeline.delete_events(events=[event])
+        with pytest.raises(Exception):
+            timeline.delete_events(events=[event])
+        assert timeline.latest_event_date() == datetime(2025, 1, 1)
+
+    def test_delete_all_events(self, schedule_timeline):
+        timeline = schedule_timeline
+
+        assert len(timeline.event_dates()) == 2
+        timeline.delete_all_events()
+        assert timeline.event_dates() == []
+
+        # The timeline is usable afterwards, e.g. when reloading an events file
+        timeline.add_insert_date_event(event_date="2024-01-01")
+        assert len(timeline.event_dates()) == 1
+
     def test_set_timestamp_does_not_limit_queries(self, populated_timeline):
         from datetime import datetime
 
